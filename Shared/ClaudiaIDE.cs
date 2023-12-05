@@ -386,6 +386,12 @@ namespace ClaudiaIDE
                         {
                             await SetTransparentForChildAsync(c);
                         }
+                    } else
+                    {
+                        foreach (var c in current.Children())
+                        {
+                            await RevertTransparentForChildAsync(c);
+                        }
                     }
                 }
                 else if (refd.FullName.Equals("Microsoft.VisualStudio.Text.Editor.Implementation.WpfTextView",
@@ -532,6 +538,42 @@ namespace ClaudiaIDE
             }
         }
 
+        private async Task RevertTransparentForChildAsync(DependencyObject d)
+        {
+            if (d == null) return;
+            foreach (var c in d.Children())
+            {
+                if (c == null) continue;
+                var type = c.GetType();
+
+                if (type?.FullName.Equals("System.Windows.Controls.Primitives.Thumb") == true) return;
+                // this method is currently only tested on VS2022 layout
+                if (type?.FullName.Equals("Microsoft.VisualStudio.Text.Editor.Implementation.WpfTextViewHost") == true)
+                {
+                    foreach (var _presenter in c.Children())
+                    {
+                        if (_presenter == null) continue;
+                        foreach (var _grid in _presenter.Children())
+                        {
+                            if (_grid == null) continue;
+                            foreach (var context in _grid.Children())
+                            {
+                                if (context == null) continue;
+                                var t = context.GetType();
+                                if (t?.FullName.Equals("Microsoft.VisualStudio.Text.Editor.Implementation.WpfTextView") == true) continue;
+                                await SetBackgroundToTransparentAsync(context, false);
+                                await RevertTransparentForChildAsync(context);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                await SetBackgroundToTransparentAsync(c, false);
+                if (type?.FullName.Equals("Microsoft.VisualStudio.Text.Editor.Implementation.AdornmentLayer") == true) continue; // stop for childs object
+                await RevertTransparentForChildAsync(c);
+            }
+        }
+
         private async Task SetBackgroundToTransparentAsync(DependencyObject d, bool isTransparent)
         {
             var type = d.GetType();
@@ -550,15 +592,17 @@ namespace ClaudiaIDE
                     {
                         _defaultThemeColor[d.GetHashCode()] = current as DependencyObject;
                     }
-
                     property.SetValue(d, (Brush)Brushes.Transparent);
                 }
                 else
                 {
-                    var d1 = _defaultThemeColor.FirstOrDefault(x => x.Key == current.GetHashCode());
+                    var d1 = _defaultThemeColor.FirstOrDefault(x => x.Key == d.GetHashCode());
                     if (d1.Value != null)
                     {
                         property.SetValue(d, (Brush)d1.Value);
+                    } else
+                    {
+                        _defaultThemeColor[d.GetHashCode()] = current as DependencyObject;
                     }
                 }
             }
